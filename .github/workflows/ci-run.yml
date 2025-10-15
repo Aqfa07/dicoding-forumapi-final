@@ -1,0 +1,83 @@
+name: CI (Run)
+
+on:
+  push:            # run on any branch push
+  pull_request:    # run on PRs (any source) targeting any branch; you can restrict to [ main, master ] if desired
+    branches: [ main, master ]
+  workflow_dispatch: {}  # allow manual runs from Actions tab
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: forum_api_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 4000
+      ACCESS_TOKEN_KEY: testaccess
+      REFRESH_TOKEN_KEY: testrefresh
+      PGHOST_TEST: 127.0.0.1
+      PGPORT_TEST: 5432
+      PGUSER_TEST: postgres
+      PGPASSWORD_TEST: postgres
+      PGDATABASE_TEST: forum_api_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install deps
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres to be ready
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for i in {1..30}; do
+            if psql -h 127.0.0.1 -U postgres -d forum_api_test -c "select 1" >/dev/null 2>&1; then
+              echo "Postgres is ready"
+              break
+            fi
+            echo "Waiting for Postgres..."
+            sleep 2
+          done
+
+      - name: Debug npm scripts (optional)
+        run: npm run || true
+
+      - name: Run DB migrations (test database)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/forum_api_test
+        run: npx node-pg-migrate up
+
+      - name: Run tests
+        run: npx jest --setupFiles dotenv/config -i
