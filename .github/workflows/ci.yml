@@ -32,9 +32,9 @@ jobs:
           - 5432:5432
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           
@@ -45,11 +45,11 @@ jobs:
           npm run test
         env:
           # Variabel untuk koneksi ke database service container
-          PGHOST_TEST: localhost
-          PGPORT_TEST: 5432
-          PGUSER_TEST: ${{ secrets.POSTGRES_USER_TEST }}
-          PGPASSWORD_TEST: ${{ secrets.POSTGRES_PASSWORD_TEST }}
-          PGDATABASE_TEST: ${{ secrets.POSTGRES_DB_TEST }}
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: ${{ secrets.POSTGRES_USER_TEST }}
+          PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD_TEST }}
+          PGDATABASE: ${{ secrets.POSTGRES_DB_TEST }}
 
           # Variabel lain yang dibutuhkan aplikasi Anda
           ACCESS_TOKEN_KEY: ${{ secrets.ACCESS_TOKEN_KEY }}
