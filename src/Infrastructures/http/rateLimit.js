@@ -35,19 +35,52 @@ function registerThreadsRateLimit(server) {
     const arr = buckets.get(key) || []
     pruneOld(arr, now)
 
+    // compute reset seconds in current window
+    const oldestTs = arr[0] ?? now
+    const resetMs = Math.max(0, WINDOW_MS - (now - oldestTs))
+    const resetSec = Math.ceil(resetMs / 1000)
+
     if (arr.length >= MAX_REQUESTS) {
       const resp = h.response({
         status: "fail",
         message: "Terlalu banyak permintaan ke resource threads. Coba lagi nanti.",
       })
       resp.code(429)
-      resp.header("Retry-After", Math.ceil(WINDOW_MS / 1000))
+      resp.header("Retry-After", resetSec)
+      resp.header("X-RateLimit-Limit", String(MAX_REQUESTS))
+      resp.header("X-RateLimit-Remaining", "0")
+      resp.header("X-RateLimit-Reset", String(resetSec))
       return resp
     }
 
     arr.push(now)
     buckets.set(key, arr)
 
+    // store rate info to attach on response later
+    request.app._threadsRate = {
+      limit: MAX_REQUESTS,
+      remaining: Math.max(0, MAX_REQUESTS - arr.length),
+      reset: resetSec,
+    }
+
+    return h.continue
+  })
+
+  server.ext("onPreResponse", (request, h) => {
+    const info = request.app._threadsRate
+    if (!info) return h.continue
+
+    const res = request.response
+    // Hapi responses: normal has .header; Boom errors use output.headers
+    if (res && typeof res.header === "function") {
+      res.header("X-RateLimit-Limit", String(info.limit))
+      res.header("X-RateLimit-Remaining", String(info.remaining))
+      res.header("X-RateLimit-Reset", String(info.reset))
+    } else if (res && res.output && res.output.headers) {
+      res.output.headers["X-RateLimit-Limit"] = String(info.limit)
+      res.output.headers["X-RateLimit-Remaining"] = String(info.remaining)
+      res.output.headers["X-RateLimit-Reset"] = String(info.reset)
+    }
     return h.continue
   })
 
