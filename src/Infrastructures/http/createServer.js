@@ -1,28 +1,29 @@
-const Hapi = require('@hapi/hapi');
-const Jwt = require('@hapi/jwt');
-const config = require('../../Commons/config');
-const ClientError = require('../../Commons/exceptions/ClientError');
-const DomainErrorTranslator = require('../../Commons/exceptions/DomainErrorTranslator');
-const users = require('../../Interfaces/http/api/users');
-const authentications = require('../../Interfaces/http/api/authentications');
-const threads = require('../../Interfaces/http/api/threads');
-const comments = require('../../Interfaces/http/api/comments');
-const replies = require('../../Interfaces/http/api/replies');
-const likes = require('../../Interfaces/http/api/likes');
+const Hapi = require("@hapi/hapi")
+const Jwt = require("@hapi/jwt")
+const config = require("../../Commons/config")
+const ClientError = require("../../Commons/exceptions/ClientError")
+const DomainErrorTranslator = require("../../Commons/exceptions/DomainErrorTranslator")
+const users = require("../../Interfaces/http/api/users")
+const authentications = require("../../Interfaces/http/api/authentications")
+const threads = require("../../Interfaces/http/api/threads")
+const comments = require("../../Interfaces/http/api/comments")
+const replies = require("../../Interfaces/http/api/replies")
+const likes = require("../../Interfaces/http/api/likes")
+const { registerThreadsRateLimit } = require("./rateLimit")
 
 const createServer = async (container) => {
   const server = Hapi.server({
     host: config.app.host,
     port: config.app.port,
-  });
+  })
 
   await server.register([
     {
       plugin: Jwt,
     },
-  ]);
+  ])
 
-  server.auth.strategy('forum_jwt', 'jwt', {
+  server.auth.strategy("forum_jwt", "jwt", {
     keys: config.jwt.accessTokenKey,
     verify: {
       aud: false,
@@ -36,7 +37,7 @@ const createServer = async (container) => {
         id: artifacts.decoded.payload.id,
       },
     }),
-  });
+  })
 
   await server.register([
     {
@@ -63,45 +64,48 @@ const createServer = async (container) => {
       plugin: likes,
       options: { container },
     },
-  ]);
+  ])
 
-  server.ext('onPreResponse', (request, h) => {
+  // Aktifkan rate limit untuk semua resource /threads dan turunannya
+  registerThreadsRateLimit(server)
+
+  server.ext("onPreResponse", (request, h) => {
     // mendapatkan konteks response dari request
-    const { response } = request;
+    const { response } = request
 
     if (response instanceof Error) {
       // bila response tersebut error, tangani sesuai kebutuhan
-      const translatedError = DomainErrorTranslator.translate(response);
+      const translatedError = DomainErrorTranslator.translate(response)
 
       // penanganan client error secara internal.
       if (translatedError instanceof ClientError) {
         const newResponse = h.response({
-          status: 'fail',
+          status: "fail",
           message: translatedError.message,
-        });
-        newResponse.code(translatedError.statusCode);
-        return newResponse;
+        })
+        newResponse.code(translatedError.statusCode)
+        return newResponse
       }
 
       // mempertahankan penanganan client error oleh hapi secara native, seperti 404, etc.
       if (!translatedError.isServer) {
-        return h.continue;
+        return h.continue
       }
 
       // penanganan server error sesuai kebutuhan
       const newResponse = h.response({
-        status: 'error',
-        message: 'terjadi kegagalan pada server kami',
-      });
-      newResponse.code(500);
-      return newResponse;
+        status: "error",
+        message: "terjadi kegagalan pada server kami",
+      })
+      newResponse.code(500)
+      return newResponse
     }
 
     // jika bukan error, lanjutkan dengan response sebelumnya (tanpa terintervensi)
-    return h.continue;
-  });
+    return h.continue
+  })
 
-  return server;
-};
+  return server
+}
 
-module.exports = createServer;
+module.exports = createServer
